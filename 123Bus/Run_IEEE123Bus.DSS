@@ -44,8 +44,9 @@ Set MaxControlIter=30
 
 New EnergyMeter.Feeder Line.L115 terminal=1
 New Monitor.Potencia_Feeder Line.L115 mode=1 terminal=1 ppolar=no
+New Monitor.Storage Storage.Storage mode=3
 
-set mode = daily stepsize=15m number=192
+set mode = daily stepsize=15m number=96
 !set mode = daily stepsize=15m number=60 !Simulacao na Máxima demanda
 !SOLVE
 

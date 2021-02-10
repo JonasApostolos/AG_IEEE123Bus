@@ -21,7 +21,7 @@ class DSS(object):  # Classe DSS
         # OpenDSS folder
         self.OpenDSS_folder_path = os.path.dirname(self.dssFileName)
 
-    def solve(self, solucao, kWRatedList):
+    def solve(self, solucao, kWRatedList, kwHRatedList, porcentagem_prosumidores):
         # self.compile_DSS()
         self.results_path = self.OpenDSS_folder_path + "/results_Main"
         self.dss.text("set DataPath=" + self.results_path)
@@ -31,20 +31,22 @@ class DSS(object):  # Classe DSS
         for i in listaCargas:
             self.dss.text("New Monitor." + str(listaCargas.index(i)) + " Element=" + i + " mode=32 terminal=1")
 
-        # PmppList = list(range(100, 4700, 200))
         LoadshapePointsList = [round(ctd, 2) for ctd in list(numpy.arange(-1.0, 1.05, 0.05))]
-        Loadshape = [LoadshapePointsList[ctd] for ctd in solucao[1:]]
+        Loadshape = [LoadshapePointsList[ctd] for ctd in solucao[2:]]
         Loadshape = self.LoadshapeToMediaMovel(Loadshape)
+
+        kWhstored = 0.6*kwHRatedList[solucao[1]]
         # print(Loadshape)
+
+        self.dss.text("Redirect PVSystems_" + str(porcentagem_prosumidores) + ".dss")
 
         self.dss.text("Loadshape.Loadshape1.mult=" + str(Loadshape))
         self.dss.text("Storage.storage.Bus1=" + '60')
-        # self.dss.text("PVSystem.PV.Bus1=" + '107139M3009 ')
         self.dss.text("Storage.storage.kWrated=" + str(kWRatedList[solucao[0]]))
         self.dss.text("Storage.storage.kva=" + str(kWRatedList[solucao[0]]))
         self.dss.text("Storage.storage.kw=" + str(kWRatedList[solucao[0]]))
-        # self.dss.text("Storage.storage.kWrated=1000")
-        # self.dss.text("Storage.storage.kva=1000")
+        self.dss.text("Storage.storage.kWhrated=" + str(kwHRatedList[solucao[1]]))
+        self.dss.text("Storage.storage.kWhstored=" + str(kWhstored))
         # self.dss.text("Storage.storage.kw=1000")
         # self.dss.text("PVSystem.PV.KVA=" + '2500')
         # self.dss.text("PVSystem.PV.Pmpp=" + '2500')
@@ -60,9 +62,9 @@ class DSS(object):  # Classe DSS
         for i in listaCargas:
             self.dss.text("export monitor " + str(listaCargas.index(i)))
 
-    def funcaoCusto(self, solucao, kWRatedList):
+    def funcaoCusto(self, solucao, kWRatedList, kwHRatedList, porcentagem_prosumidores):
         self.compile_DSS()
-        self.solve(solucao, kWRatedList)
+        self.solve(solucao, kWRatedList, kwHRatedList, porcentagem_prosumidores)
 
         # Inclinaçoes
         Inclinacao = 0
@@ -84,22 +86,7 @@ class DSS(object):  # Classe DSS
 
         # CICLO DE CARGA DA BATERIA
         # É preciso garantir que ao final das 48h o nível de carregamento da bateria seja o mesmo do inicio da simulacao
-        dataMonitorStorage = {}
-
-        fname = "D:\\UFBA/IC-storage\\AG_IEEE123Bus\\123Bus\\results_Main\\ieee123_Mon_storage_1.csv"
-
-        with open(str(fname), 'r', newline='') as file:
-            csv_reader_object = csv.reader(file)
-            name_col = next(csv_reader_object)
-            for row in name_col:
-                dataMonitorStorage[row] = []
-            for row in csv_reader_object:  ##Varendo todas as linhas
-                for ndata in range(0, len(name_col)-2):  ## Varendo todas as colunas
-                    rowdata = row[ndata].replace(" ", "").replace('"',"")
-                    dataMonitorStorage[name_col[ndata]].append(float(rowdata))
-
-        Carregamento48h = dataMonitorStorage[' kWh'][-1]
-        PunicaoCicloCarga = pow(abs((30000-Carregamento48h)/1000),1.5)
+        Carregamento48h, PunicaoCicloCarga = self.PunicaoCiclodeCarga(solucao, kwHRatedList)
 
         # PERDAS
         ### Acessando arquivo CSV Potência
@@ -154,7 +141,7 @@ class DSS(object):  # Classe DSS
         Perdas_sem_Pv_Stor = 2.316
 
         #Custo = a/(Perdas_sem_Pv_Stor/100-self.dataperda['Perdas %']/100) + b*Desvio + Inclinacao + PunicaoTensao + PunicaoCicloCarga
-        Custo = 1/self.dataperda['Perdas %']/100 + b*Desvio + PunicaoTensao + Inclinacao + PunicaoTensao + PunicaoCicloCarga
+        Custo = 1/self.dataperda['Perdas %']/100 + b*Desvio + Inclinacao + PunicaoTensao + PunicaoCicloCarga
         return Custo
 
     def mutacao(self, dominio, passo, solucao):
@@ -174,84 +161,21 @@ class DSS(object):  # Classe DSS
         i = random.randint(1, len(dominio) - 2)
         return individuo1[0:i] + individuo2[i:]
 
-    def genetico(self, kWRatedList, dominio, tamanho_populacao=80,  passo=1,
-                 probabilidade_mutacao=0.2, elitismo=0.2, numero_geracoes=300):
+    def genetico(self,porcentagem_prosumidores, kWRatedList, kwHRatedList, dominio, tamanho_populacao=80,  passo=1,
+                 probabilidade_mutacao=0.2, elitismo=0.2):
 
-        self.Cenario() # cria o cenario
+        # self.Cenario(porcentagem_prosumidores) # cria o cenario
 
-        self.BarrasTensaoVioladasOriginal = self.CalculaCustosOriginal()
+        self.BarrasTensaoVioladasOriginal = self.CalculaCustosOriginal(porcentagem_prosumidores)
 
         populacao = []
-        LoadshapePointsList = [round(ctd, 2) for ctd in list(numpy.arange(-1.0, 1.05, 0.05))]
-        listadeLoadShapes1 = [
-            [0, 0, -0.3, -0.45, -0.5, -0.45, -0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0.3, 0.5, 0.8, 0.9, 0.8, 0.5, 0.3, 0, 0],
-            [0, 0, -0.3, -0.45, -0.5, -0.45, -0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0.3, 0.4, 0.6, 0.8, 0.9, 0.8, 0.5, 0.3, 0],
-            [0, 0, 0, -0.3, -0.45, -0.5, -0.45, -0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0.3, 0.6, 0.75, 0.95, 0.9, 0.8, 0.3, 0],
-            [0, -0.1, -0.2, -0.2, -0.2, -0.2, -0.2, -0.2, -0.1, 0, 0, 0, 0, 0, 0.3, 0.6, 0.8, 0.8, 0.8, 0.6, 0.4, 0, 0,
-             0],
-            [0.3, 0.3, 0.3, 0.3, 0.3, 0.2, 0.1, 0, 0, -0.5, -0.6, -0.7, -0.8, -0.9, -0.9, -0.8, -0.4, 0.3, 0.5, 0.8,
-             0.9, 0.7, 0.3, 0.3],
-            [0, -0.1, -0.2, -0.2, 0, 0, 0, 0, -0.1, -0.3, -0.65, -0.7, -0.8, -0.9, -0.85, -0.75, -0.45, 0.5, 0.9, 0.9,
-             0.95, 0.8, 0.8, 0.7],
-            [0.3, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0, -0.1, -0.3, -0.6, -0.75, -0.75, -0.8, -0.9, -0.85, -0.4, 0.5, 0.9,
-             0.9, 0.9, 0.8, 0.8, 0.7],
-            [0.3, 0.3, 0.5, 0.5, 0.5, 0.3, 0.3, 0.3, 0, 0, -0.8, -0.8, -0.9, -0.9, -0.8, -0.8, -0.8, 0, 0.75, 0.8, 0.9,
-             0.8, 0.8, 0.4],
-            [0.2, 0.25, 0.15, 0.2, 0.2, 0.2, 0.65, 0.7, 0.7, -0.3, -0.65, -0.65, -0.75, -0.85, -0.95, -0.95, -0.45,
-             0.45, 0.85, 0.85, 0.85, 0.85, 0.7, 0.35],
-            [0.15, 0.15, 0.15, 0, 0, 0, 0, 0, -0.05, -0.05, -0.45, -0.45, -0.75, -0.75, -0.75, -0.75, -0.75, -0.75, 0.3,
-             0.45, 0.55, 0.5, 0.5, 0.05],
-            [0.05, 0, 0, 0, 0, 0, 0, 0, -0.1, -0.25, -0.35, -0.55, -0.6, -0.9, -0.9, -0.95, -0.5, 0.45, 0.75, 0.85, 0.9,
-             0.9, 0.75, 0.15],
-            [0.05, 0.45, 0.75, 0.75, 0.75, 0.75, 0.75, 0.15, 0, 0, -0.35, -0.35, -0.95, -0.95, -0.95, -0.95, -0.4, 0.45,
-             0.55, 0.6, 0.6, 0.6, 0.6, 0.15],
-            [0.1, -0.2, -0.2, -0.2, -0.2, 0, 0, 0, -0.1, -0.25, -0.4, -0.6, -0.6, -0.6, -0.6, -0.5, -0.4, 0.6, 0.8, 0.9,
-             0.8, 0.5, 0.3, 0],
-            [-0.15, -0.15, -0.15, -0.15, 0, 0, 0, 0, 0, -0.2, -0.4, -0.5, -0.7, -0.7, -0.5, -0.4, -0.2, 0.45, 0.75, 0.8,
-             0.75, 0.75, 0.5, -0.25],
-            [0.2, 0.25, 0.2, 0.25, 0.2, 0.25, 0.2, 0.25, -0.2, -0.25, -0.6, -0.6, -0.7, -0.8, -0.8, -0.8, -0.6, 0.45,
-             0.9, 0.95, 0.95, 0.9, 0.75, 0.1],
-            [0, 0.05, 0.1, 0.15, 0.15, 0, 0, 0, -0.1, -0.3, -0.4, -0.6, -0.7, -0.75, -0.85, -0.8, -0.8, 0.25, 0.5, 0.7,
-             0.7, 0.9, 0.3, 0.1],
-            [-0.3, -0.3, -0.3, -0.3, -0.3, -0.05, -0.05, -0.05, -0.1, -0.15, -0.3, -0.3, -0.5, -0.55, -0.55, -0.65,
-             -0.5, 0.25, 0.5, 0.9, 0.9, 0.9, 0.5, 0.4],
-            [-0.25, -0.3, -0.25, -0.3, -0.25, -0.3, 0, 0, 0, -0.35, -0.55, -0.65, -0.7, -0.75, -0.95, -0.4, -0.3, 0.2,
-             0.5, 0.85, 0.8, 0.85, 0.5, 0.4],
-            [0.1, 0.1, 0.1, 0.1, 0.2, 0.35, 0.35, 0.45, 0.1, -0.3, -0.5, -0.7, -0.75, -0.85, -0.85, -0.85, -0.75, -0.15,
-             0.7, 0.75, 0.75, 0.75, 0.3, 0.25],
-            [0.3, 0.3, 0.3, 0.3, 0.3, 0.45, 0.45, 0.45, 0.15, -0.2, -0.5, -0.65, -0.75, -0.8, -0.85, -0.85, -0.8, -0.25,
-             0.5, 0.8, 0.85, 0.85, 0.5, 0.2],
-            [0.3, 0.3, 0.3, 0.3, 0.3, 0.45, 0.45, 0.45, 0.15, -0.3, -0.4, -0.6, -0.7, -0.75, -0.85, -0.8, -0.8, 0.25,
-             0.5, 0.9, 0.9, 0.9, 0.6, 0.4],
-            [0.35, 0.35, 0, 0, 0, 0.4, 0.45, 0.45, 0.15, -0.3, -0.55, -0.65, -0.7, -0.75, -0.85, -0.8, -0.8, 0.25, 0.5,
-             0.9, 0.9, 0.9, 0.6, 0.4],
-            [0.3, 0.15, 0.15, 0.15, 0.3, 0.4, 0.45, 0.45, 0.15, -0.3, -0.4, -0.6, -0.75, -0.75, -0.85, -0.8, -0.8, 0.25,
-             0.45, 0.8, 0.9, 0.95, 0.6, 0.4],
-            [0.3, 0.2, 0, 0, 0.1, 0.15, 0.15, 0.15, 0.15, -0.3, -0.4, -0.6, -0.7, -0.95, -0.95, -0.8, -0.8, 0.25, 0.45,
-             0.9, 0.9, 0.9, 0.6, 0.4],
-            [0.1, 0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.7, -0.7, -0.85, -0.85, -0.85, -0.3, 0.25, 0.5,
-             0.6, 0.8, 0.85, 0.7, 0.4],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0]
-        ]
-        listadeLoadShapes2 = [
-            [-0.3,-0.3,-0.3,-0.3,-0.3,-0.3,-0.3,0,0.3,0.45,0.5,0.5,0.45,0.3,0.1,-0.1,-0.1,-0.1,-0.1,-0.1,-0.1,-0.1,-0.1,-0.1],
-            [-0.3,-0.45,-0.5,-0.45,-0.3,0,0,0,0,0,0,0,0,0,0,0.3,0.4,0.6,0.8,0.9,0.8,0.5,0.3,0],
-            [0,0,0,-0.3,-0.45,-0.5,-0.45,-0.3,0,0,0,0,0,0,0,0,0.3,0.6,0.75,0.95,0.9,0.8,0.3,0],
-            [0,0,0,0,0,0,0,0,0,0,0,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,0.5,0.5,0.5,0.5,0.5,0.5,0],
-            [0.1,0.1,0.1,0.1,0.1,0.1,0.1,0,-0.1,-0.3,-0.6,-0.75,-0.75,-0.8,-0.9,-0.85,-0.4,0.5,0.9,0.9,0.9,0.8,0.8,0.7],
-            [0,0.3,0.4,0.6,0.7,0.6,0.4,0.3,0,-0.3,-0.45,-0.5,-0.45,-0.4,-0.3,-0.05,0.25,0.4,0.55,0.6,0.6,0.45,0.25,0.15],
-            [0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-            [0.05,0.05,0.05,0.05,0.05,0.05,0.05,0.05,0.05,-0.3,-0.3,-0.3,-0.3,-0.3,-0.3,-0.3,-0.3,0.05,0.05,0.05,0.05,0.05,0.05,0.05],
-            [0.15,0.15,0.15,0.15,0.15,0.15,0.15,0.15,0.15,0.15,0.15,0,0,0,0,0,0,-0.35,-0.35,-0.35,-0.35,-0.35,-0.35,-0.35],
-            [-0.2,-0.2,-0.2,-0.2,-0.2,-0.2,-0.2,-0.2,-0.2,-0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.4,0.4,0.4,0.4,0.4,0.4]
-        ]
 
         # Cria a primeira geração
         for i in range(tamanho_populacao):
             # Solucao para todos os valores Random
             solucao = []
             for ctd in range(len(dominio)):
-                if ctd == 0 or ctd == 1:
+                if ctd <= 2:
                     solucao.append(random.randint(dominio[ctd][0], dominio[ctd][1]))
                 else:
                     a = [dominio[ctd][0], solucao[-1] - 14]
@@ -270,15 +194,15 @@ class DSS(object):  # Classe DSS
 
         while stop == False:
             start = time.time()
-            custos = [(self.funcaoCusto(individuo, kWRatedList), individuo) for individuo in populacao]
+            custos = [(self.funcaoCusto(individuo, kWRatedList, kwHRatedList, porcentagem_prosumidores), individuo) for individuo in populacao]
             custos.sort()
             melhor_solucao.append(custos[0][0])
-            if melhor_solucao.count(custos[0][0]) == int(0.2*tamanho_populacao):
+            if melhor_solucao.count(custos[0][0]) == int(0.2*tamanho_populacao): # Criterio de parada
                 stop = True
             # custos_traduzidos = [(ctd[0], kWRatedList[ctd[1][0]], [LoadshapePointsList[i] for i in ctd[1][1:]]) for ctd in custos]
-            custos_traduzidos = [(ctd[0], kWRatedList[ctd[1][0]]) for ctd in custos]
+            custos_traduzidos = [(ctd[0], kWRatedList[ctd[1][0]], kwHRatedList[ctd[1][1]]) for ctd in custos]
             print("Geração::", geracao,  custos_traduzidos)
-            self.CalculaCustos(custos[0][1], kWRatedList)
+            self.CalculaCustos(custos[0][1], kWRatedList, kwHRatedList, porcentagem_prosumidores)
             print("Melhores Resultados", melhor_solucao)
             geracao += 1
             individuos_ordenados = [individuo for (custo, individuo) in custos]
@@ -342,7 +266,7 @@ class DSS(object):  # Classe DSS
 
     def InclinacoesLoadshape(self, solucao):
         LoadshapePointsList = [round(ctd, 2) for ctd in list(numpy.arange(-1.0, 1.05, 0.05))]
-        Loadshape = [LoadshapePointsList[i] for i in solucao[1:]]
+        Loadshape = [LoadshapePointsList[i] for i in solucao[2:]]
         Inclinacoes = []
 
         for i in range((len(Loadshape)-1)):
@@ -384,13 +308,13 @@ class DSS(object):  # Classe DSS
         #         BarrasVioladas += 1
         return BarrasVioladas
 
-    def Cenario(self, porcentagem_prosumidores=0.4):
+    def Cenario(self, porcentagem_prosumidores):
         self.compile_DSS()
         self.dss.text("Storage.storage.enabled=no")
 
         self.dss.text("Solve")
 
-        pv_file = open("PVSystems.dss", "w")
+        pv_file = open("PVSystems_" + str(porcentagem_prosumidores) + ".dss", "w")
         # Cargas e Barras
         loadlist = []
         loaddict = {}
@@ -404,7 +328,7 @@ class DSS(object):  # Classe DSS
             Epv = 7.89*0.97**2 # capacidade de geracao
             Ec = 0 # consumo diario medio
             for i in self.dss.loadshapes_read_pmult():
-                Ec += i * 0.25
+                Ec += i*self.dss.loads_read_kw()
             pmpp = round(Ec / Epv, 2)
             loaddict[load] = [numphases, bus, kvbase, pmpp]
 
@@ -415,7 +339,7 @@ class DSS(object):  # Classe DSS
         # Seleção por Roleta dos Prosumidores
         fim = round(len(loadlist) * porcentagem_prosumidores)
         # print('fim', fim)
-
+        print(loadlist)
         prosumidores = []
         while len(prosumidores) < fim:
             soma = 0
@@ -444,31 +368,16 @@ class DSS(object):  # Classe DSS
             ctd += 1
         pv_file.close()
 
-    def CalculaCustos(self, solucao, kWRatedList):
+    def CalculaCustos(self, solucao, kWRatedList, kwHRatedList, porcentagem_prosumidores):
         self.compile_DSS()
-        self.solve(solucao, kWRatedList)
+        self.solve(solucao, kWRatedList, kwHRatedList, porcentagem_prosumidores)
 
         LoadshapePointsList = [round(ctd, 2) for ctd in list(numpy.arange(-1.0, 1.05, 0.05))]
-        Loadshape = [LoadshapePointsList[ctd] for ctd in solucao[1:]]
+        Loadshape = [LoadshapePointsList[ctd] for ctd in solucao[2:]]
 
         # CICLO DE CARGA DA BATERIA
         # É preciso garantir que ao final das 48h o nível de carregamento da bateria seja o mesmo do inicio da simulacao
-        dataMonitorStorage = {}
-
-        fname = "D:\\UFBA/IC-storage\\AG_IEEE123Bus\\123Bus\\results_Main\\ieee123_Mon_storage_1.csv"
-
-        with open(str(fname), 'r', newline='') as file:
-            csv_reader_object = csv.reader(file)
-            name_col = next(csv_reader_object)
-            for row in name_col:
-                dataMonitorStorage[row] = []
-            for row in csv_reader_object:  ##Varendo todas as linhas
-                for ndata in range(0, len(name_col)-2):  ## Varendo todas as colunas
-                    rowdata = row[ndata].replace(" ", "").replace('"',"")
-                    dataMonitorStorage[name_col[ndata]].append(float(rowdata))
-
-        Carregamento48h = dataMonitorStorage[' kWh'][-1]
-        PunicaoCicloCarga = pow(abs((30000-Carregamento48h)/1000),1.5)
+        Carregamento48h, PunicaoCicloCarga = self.PunicaoCiclodeCarga(solucao, kwHRatedList)
 
         # Inclinaçoes
         Inclinacao = 0
@@ -530,7 +439,7 @@ class DSS(object):  # Classe DSS
         print('Perdas:', self.dataperda['Perdas %'], 'kWh 48h:', Carregamento48h, 'Inclinação:', Inclinacao, 'Barras_Violada:', self.BarrasTensaoVioladas(), 'PTotal:', dataFeederMmonitorCSV['PTotal'])
         print('Loadshape:', self.LoadshapeToMediaMovel(Loadshape))
 
-    def CalculaCustosOriginal(self):
+    def CalculaCustosOriginal(self, porcentagem_prosumidores):
         self.compile_DSS()
 
         self.results_path = self.OpenDSS_folder_path + "/results_Main"
@@ -542,6 +451,7 @@ class DSS(object):  # Classe DSS
             self.dss.text("New Monitor." + str(listaCargas.index(i)) + " Element=" + i + " mode=32 terminal=1")
 
         self.dss.text("Storage.storage.enabled=no")
+        self.dss.text("Redirect PVSystems_" + str(porcentagem_prosumidores) + ".dss")
 
         self.dss.text("Solve")
 
@@ -605,18 +515,40 @@ class DSS(object):  # Classe DSS
         print('Perdas:', self.dataperda['Perdas %'], 'Violações de Tensao:', barrasVioladas, 'PTotal:', dataFeederMmonitorCSV['PTotal'], '\n')
         return barrasVioladas
 
+    def PunicaoCiclodeCarga(self, solucao, kwHRatedList):
+        kWhstored = 0.6 * kwHRatedList[solucao[1]]
 
+        dataMonitorStorage = {}
 
+        fname = "D:\\UFBA/IC-storage\\AG_IEEE123Bus\\123Bus\\results_Main\\ieee123_Mon_storage_1.csv"
+
+        with open(str(fname), 'r', newline='') as file:
+            csv_reader_object = csv.reader(file)
+            name_col = next(csv_reader_object)
+            for row in name_col:
+                dataMonitorStorage[row] = []
+            for row in csv_reader_object:  ##Varendo todas as linhas
+                for ndata in range(0, len(name_col)-2):  ## Varendo todas as colunas
+                    rowdata = row[ndata].replace(" ", "").replace('"',"")
+                    dataMonitorStorage[name_col[ndata]].append(float(rowdata))
+
+        Carregamento48h = dataMonitorStorage[' kWh'][-1]
+        PunicaoCicloCarga = pow(abs((kWhstored-Carregamento48h)/1000),1.5)
+        return Carregamento48h, PunicaoCicloCarga
 
 
 if __name__ == '__main__':
     d = DSS(r"D:\\UFBA/IC-storage\\AG_IEEE123Bus\\123Bus\\Run_IEEE123Bus.dss")
-    kWRatedList = list(range(100, 5100, 100))
-    dominio = [(0, len(kWRatedList) - 1), (0, 40) , (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
+
+    # for i in range(10,100,10):
+    #     i = i/100
+    #     d.Cenario(i)
+
+    kWRatedList = list(range(100, 4100, 100))
+    kwHRatedList = list(range(1000, 35000, 500))
+    # dominio = [(0, len(kWRatedList) - 1), (0, 40) , (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
+    dominio = [(0, len(kWRatedList) - 1), (0, len(kwHRatedList) - 1), (0, 40), (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
     # dominio = [(0, 40) , (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
 
-
-    solucao_genetico = d.genetico(kWRatedList, dominio)
-    custo_genetico = d.funcaoCusto(solucao_genetico, kWRatedList)
-    print(custo_genetico)
-    print(solucao_genetico)
+    porcentagem_prosumidores = 0.4
+    solucao_genetico = d.genetico(porcentagem_prosumidores, kWRatedList, kwHRatedList, dominio,)
