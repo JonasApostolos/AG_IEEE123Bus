@@ -45,11 +45,15 @@ class DSS(object):  # Classe DSS
         self.dss.text("Storage.storage.kWrated=" + str(kWRatedList[solucao[0]]))
         self.dss.text("Storage.storage.kva=" + str(kWRatedList[solucao[0]]))
         self.dss.text("Storage.storage.kw=" + str(kWRatedList[solucao[0]]))
-        self.dss.text("Storage.storage.kWhrated=" + str(kwHRatedList[solucao[1]]))
-        self.dss.text("Storage.storage.kWhstored=" + str(kWhstored))
+        # self.dss.text("Storage.storage.kWhrated=" + str(kwHRatedList[solucao[1]]))
+        # self.dss.text("Storage.storage.kWhstored=" + str(kWhstored))
+
+        self.dss.text("Storage.storage.kWhrated=50000")
+        self.dss.text("Storage.storage.kWhstored=30000")
         # self.dss.text("Storage.storage.kw=1000")
         # self.dss.text("PVSystem.PV.KVA=" + '2500')
         # self.dss.text("PVSystem.PV.Pmpp=" + '2500')
+
         self.dss.text("Storage.storage.enabled=yes")
 
         self.dss.text("Solve")
@@ -140,8 +144,8 @@ class DSS(object):  # Classe DSS
         Desvio = statistics.pstdev(dataFeederMmonitorCSV['PTotal'])
         Perdas_sem_Pv_Stor = 2.316
 
-        #Custo = a/(Perdas_sem_Pv_Stor/100-self.dataperda['Perdas %']/100) + b*Desvio + Inclinacao + PunicaoTensao + PunicaoCicloCarga
-        Custo = 1/self.dataperda['Perdas %']/100 + b*Desvio + Inclinacao + PunicaoTensao + PunicaoCicloCarga
+        # Custo = a/(Perdas_sem_Pv_Stor/100-self.dataperda['Perdas %']/100) + Desvio + Inclinacao + PunicaoTensao + PunicaoCicloCarga
+        Custo = self.dataperda['Perdas %'] + Desvio + Inclinacao + PunicaoTensao + PunicaoCicloCarga
         return Custo
 
     def mutacao(self, dominio, passo, solucao):
@@ -162,8 +166,8 @@ class DSS(object):  # Classe DSS
         return individuo1[0:i] + individuo2[i:]
 
     def genetico(self,porcentagem_prosumidores, kWRatedList, kwHRatedList, dominio, tamanho_populacao=80,  passo=1,
-                 probabilidade_mutacao=0.2, elitismo=0.2):
-
+                 probabilidade_mutacao=0.2, elitismo=0.1):
+        start2 = time.time()
         # self.Cenario(porcentagem_prosumidores) # cria o cenario
 
         self.BarrasTensaoVioladasOriginal = self.CalculaCustosOriginal(porcentagem_prosumidores)
@@ -200,7 +204,8 @@ class DSS(object):  # Classe DSS
             if melhor_solucao.count(custos[0][0]) == int(0.2*tamanho_populacao): # Criterio de parada
                 stop = True
             # custos_traduzidos = [(ctd[0], kWRatedList[ctd[1][0]], [LoadshapePointsList[i] for i in ctd[1][1:]]) for ctd in custos]
-            custos_traduzidos = [(ctd[0], kWRatedList[ctd[1][0]], kwHRatedList[ctd[1][1]]) for ctd in custos]
+            # custos_traduzidos = [(ctd[0], kWRatedList[ctd[1][0]], kwHRatedList[ctd[1][1]]) for ctd in custos]
+            custos_traduzidos = [(ctd[0], kWRatedList[ctd[1][0]]) for ctd in custos]
             print("Geração::", geracao,  custos_traduzidos)
             self.CalculaCustos(custos[0][1], kWRatedList, kwHRatedList, porcentagem_prosumidores)
             print("Melhores Resultados", melhor_solucao)
@@ -243,6 +248,16 @@ class DSS(object):  # Classe DSS
 
             end = time.time()
             print("Tempo da geração:", end - start)
+
+        Loadshape, Perda, Carregamento, Inclinacao, Tensao, Desvio, kWhRated, Demanda = self.CalculaCustos(custos[0][1], kWRatedList, kwHRatedList, porcentagem_prosumidores)
+
+        end2 = time.time()
+
+        results_file = open("Resultados.txt", "a")
+        results_file.write(f"{geracao}, {(end2 - start2)/3600}, {custos_traduzidos[0][0]}, {custos_traduzidos[0][1]}, 50000, {Loadshape}, {Perda}, {Carregamento}, {Inclinacao}, {Tensao}, {Desvio}, {kWhRated} \n{Demanda} \n{melhor_solucao} \n")
+        results_file.close()
+
+        print("tempo total:", end2 - start2)
         return custos[0][1]
 
     def listaCargas(self):
@@ -387,12 +402,11 @@ class DSS(object):  # Classe DSS
             if numpy.abs(i) > 40:
                 Inclinacao += numpy.abs(i)
 
-        ### Acessando arquivo CSV Potência
+        ### Acessando arquivo CSV Perdas
         dataEnergymeterCSV = {}
         self.dataperda = {}
 
         fname = "D:\\UFBA/IC-storage\\AG_IEEE123Bus\\123Bus\\results_Main\\ieee123_EXP_METERS.csv"
-
 
         with open(str(fname), 'r', newline='') as file:
             csv_reader_object = csv.reader(file)
@@ -436,8 +450,35 @@ class DSS(object):  # Classe DSS
 
                 dataFeederMmonitorCSV['PTotal'].append(Pt)
 
-        print('Perdas:', self.dataperda['Perdas %'], 'kWh 48h:', Carregamento48h, 'Inclinação:', Inclinacao, 'Barras_Violada:', self.BarrasTensaoVioladas(), 'PTotal:', dataFeederMmonitorCSV['PTotal'])
-        print('Loadshape:', self.LoadshapeToMediaMovel(Loadshape))
+            Desvio = statistics.pstdev(dataFeederMmonitorCSV['PTotal'])
+
+        ### Acessando CSV Storage
+        dataStorageMmonitorCSV = {}
+
+        fname = "D:\\UFBA/IC-storage\\AG_IEEE123Bus\\123Bus\\results_Main\\ieee123_Mon_storage_1.csv"
+
+        with open(str(fname), 'r', newline='') as file:
+            csv_reader_object = csv.reader(file)
+            name_col = next(csv_reader_object)
+
+            for row in name_col:
+                dataStorageMmonitorCSV[row] = []
+
+            for row in csv_reader_object:  ##Varendo todas as linhas
+                for ndata in range(0, len(name_col)-1):  ## Varendo todas as colunas
+                    if row != ['ÿÿÿÿ']:
+                        rowdata = row[ndata].replace(" ", "").replace('"', "")
+                        dataStorageMmonitorCSV[name_col[ndata]].append(float(rowdata))
+
+        maxkWh = max(dataStorageMmonitorCSV[' kWh'])
+        minkWh = min(dataStorageMmonitorCSV[' kWh'])
+        kWhRated = (maxkWh-minkWh)/0.7
+
+        # print('Perdas:', self.dataperda['Perdas %'], 'kWh 48h:', Carregamento48h, 'Inclinação:', Inclinacao, 'Barras_Violada:', self.BarrasTensaoVioladas(), 'Desvio:', Desvio, 'PTotal:', dataFeederMmonitorCSV['PTotal'])
+        print(self.LoadshapeToMediaMovel(Loadshape),",", self.dataperda['Perdas %'],",", Carregamento48h,",", Inclinacao,",", self.BarrasTensaoVioladas(),",", Desvio, ",", kWhRated)
+        print(dataFeederMmonitorCSV['PTotal'])
+        # print('Loadshape:', self.LoadshapeToMediaMovel(Loadshape))
+        return str(self.LoadshapeToMediaMovel(Loadshape)).replace("[", "").replace("]", ""), self.dataperda['Perdas %'], Carregamento48h, Inclinacao, self.BarrasTensaoVioladas(), Desvio, kWhRated, dataFeederMmonitorCSV['PTotal']
 
     def CalculaCustosOriginal(self, porcentagem_prosumidores):
         self.compile_DSS()
@@ -528,12 +569,15 @@ class DSS(object):  # Classe DSS
             for row in name_col:
                 dataMonitorStorage[row] = []
             for row in csv_reader_object:  ##Varendo todas as linhas
-                for ndata in range(0, len(name_col)-2):  ## Varendo todas as colunas
-                    rowdata = row[ndata].replace(" ", "").replace('"',"")
-                    dataMonitorStorage[name_col[ndata]].append(float(rowdata))
+                for ndata in range(0, len(name_col)-3):  ## Varendo todas as colunas
+                    if row != ['ÿÿÿÿ']:
+                        rowdata = row[ndata].replace(" ", "").replace('"',"")
+                        dataMonitorStorage[name_col[ndata]].append(float(rowdata))
 
         Carregamento48h = dataMonitorStorage[' kWh'][-1]
-        PunicaoCicloCarga = pow(abs((kWhstored-Carregamento48h)/1000),1.5)
+        # PunicaoCicloCarga = pow(abs((kWhstored-Carregamento48h)/100),1)
+        PunicaoCicloCarga = pow(abs((30000-Carregamento48h)/100),1)
+
         return Carregamento48h, PunicaoCicloCarga
 
 
@@ -550,5 +594,53 @@ if __name__ == '__main__':
     dominio = [(0, len(kWRatedList) - 1), (0, len(kwHRatedList) - 1), (0, 40), (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
     # dominio = [(0, 40) , (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
 
-    porcentagem_prosumidores = 0.4
-    solucao_genetico = d.genetico(porcentagem_prosumidores, kWRatedList, kwHRatedList, dominio,)
+    porcentagem_prosumidores = 0.3
+
+    for i in list(range(0,5,1)):
+        d.genetico(porcentagem_prosumidores, kWRatedList, kwHRatedList, dominio)
+
+    # lista = [(800, [-0.15, -0.15, -0.35, -0.375, -0.45, -0.3, -0.325, -0.199999999999999, 0, -0.325, -0.6, -0.675, -0.774999999999999, -0.825, -0.8, -0.675, -0.275, 0.3, 0.85, 1, 0.925, 0.85, 0.725, 0.35]), (800, [-0.125, -0.125, -0.324999999999999, -0.4, -0.425, -0.325, -0.325, -0.2, 0, -0.3, -0.649999999999999, -0.649999999999999, -0.75, -0.825, -0.8, -0.675, -0.3, 0.275, 0.825, 1, 0.925, 0.875, 0.675, 0.35]), (800, [-0.15, -0.15, -0.3, -0.425, -0.4, -0.35, -0.3, -0.2, -0.025, -0.3, -0.625, -0.675, -0.775, -0.8, -0.8, -0.675, -0.3, 0.3, 0.825, 1, 0.925, 0.85, 0.7, 0.35]), (700, [-0.15, -0.15, -0.325, -0.45, -0.45, -0.375, -0.4, -0.2, -0.025, -0.324999999999999, -0.725, -0.75, -0.875, -0.9, -0.9, -0.775, -0.3, 0.35, 0.875, 1, 1, 1, 0.775, 0.425]), (1000, [-0.125, -0.125, -0.25, -0.3, -0.35, -0.275, -0.224999999999999, -0.2, 0, -0.25, -0.525, -0.525, -0.649999999999999, -0.649999999999999, -0.675, -0.55, -0.224999999999999, 0.2, 0.7, 0.825, 0.675, 0.725, 0.525, 0.275]), (900, [-0.124999999999999, -0.124999999999999, -0.275, -0.375, -0.375, -0.275, -0.3, -0.175, -0.025, -0.25, -0.6, -0.6, -0.7, -0.725, -0.725, -0.6, -0.25, 0.224999999999999, 0.8, 0.925, 0.8, 0.775, 0.575, 0.3]), (900, [-0.125, -0.125, -0.25, -0.375, -0.35, -0.3, -0.3, -0.175, -0.025, -0.275, -0.55, -0.6, -0.65, -0.75, -0.7, -0.625, -0.25, 0.25, 0.75, 0.925, 0.75, 0.8, 0.575, 0.3]), (800, [-0.15, -0.15, -0.225, -0.425, -0.4, -0.35, -0.3, -0.225, -0.025, -0.3, -0.649999999999999, -0.649999999999999, -0.774999999999999, -0.825, -0.8, -0.675, -0.275, 0.3, 0.85, 1, 0.925, 0.875, 0.65, 0.35]), (1000, [-0.125, -0.125, -0.25, -0.35, -0.325, -0.275, -0.3, -0.175, -0.0499999999999999, -0.225, -0.55, -0.525, -0.625, -0.65, -0.65, -0.55, -0.224999999999999, 0.2, 0.7, 0.85, 0.7, 0.725, 0.525, 0.275]), (1000, [-0.125, -0.125, -0.25, -0.325, -0.35, -0.275, -0.3, -0.15, -0.075, -0.224999999999999, -0.525, -0.55, -0.6, -0.675, -0.625, -0.55, -0.199999999999999, 0.2, 0.725, 0.825, 0.675, 0.725, 0.5, 0.275]), (800, [-0.15, -0.15, -0.275, -0.425, -0.4, -0.325, -0.35, -0.175, -0.075, -0.275, -0.65, -0.675, -0.774999999999999, -0.825, -0.8, -0.675, -0.275, 0.3, 0.85, 1, 0.875, 0.875, 0.675, 0.35]), (900, [-0.125, -0.125, -0.25, -0.375, -0.375, -0.3, -0.25, -0.225, 0, -0.3, -0.55, -0.6, -0.7, -0.7, -0.75, -0.6, -0.25, 0.225, 0.775, 0.925, 0.774999999999999, 0.8, 0.6, 0.3]), (900, [-0.125, -0.125, -0.275, -0.375, -0.375, -0.3, -0.275, -0.175, -0.0249999999999999, -0.25, -0.6, -0.6, -0.7, -0.725, -0.7, -0.625, -0.25, 0.25, 0.75, 0.925, 0.8, 0.775, 0.575, 0.324999999999999]), (800, [-0.125, -0.125, -0.325, -0.4, -0.425, -0.325, -0.35, -0.2, 0, -0.3, -0.625, -0.675, -0.75, -0.825, -0.8, -0.7, -0.3, 0.3, 0.85, 1, 0.95, 0.85, 0.7, 0.35]), (800, [-0.125, -0.125, -0.3, -0.4, -0.425, -0.325, -0.325, -0.2, -0.05, -0.275, -0.675, -0.649999999999999, -0.774999999999999, -0.8, -0.8, -0.7, -0.275, 0.275, 0.825, 1, 0.925, 0.85, 0.7, 0.35]), (1500, [0.125, 0.125, 0.075, -0.025, 0, 0.025, -0.05, -0.075, 0, -0.325, -0.7, -0.8, -0.875, -0.899999999999999, -0.875, -0.825, -0.475, 0.0499999999999999, 0.6, 0.775, 0.675, 0.675, 0.55, 0.4]), (1400, [0.15, 0.15, -0.025, 0, 0, 0.025, -0.025, -0.05, 0, -0.35, -0.75, -0.85, -0.925, -0.975, -0.95, -0.875, -0.5, 0.05, 0.625, 0.825, 0.725, 0.75, 0.6, 0.425]), (1300, [0.15, 0.15, 0.075, 0, 0, 0.025, -0.05, -0.075, -0.025, -0.35, -0.8, -0.899999999999999, -0.975, -1, -1, -0.925, -0.55, 0.0499999999999999, 0.675, 0.875, 0.775, 0.8, 0.65, 0.45]), (1400, [0.125, 0.125, 0.1, -0.025, 0.025, 0.025, -0.05, -0.05, -0.05, -0.35, -0.775, -0.85, -0.9, -0.975, -0.975, -0.875, -0.5, 0.0499999999999999, 0.625, 0.825, 0.75, 0.725, 0.625, 0.425]), (1300, [0.15, 0.15, 0.075, 0, 0, 0.05, -0.075, -0.05, -0.05, -0.375, -0.8, -0.899999999999999, -0.975, -1, -1, -0.925, -0.55, 0.0499999999999999, 0.675, 0.875, 0.775, 0.775, 0.65, 0.45]), (1700, [0.125, 0.125, 0.0499999999999999, -0.025, 0, -0.0249999999999999, 0, -0.05, 0, -0.3, -0.6, -0.7, -0.775, -0.8, -0.825, -0.725, -0.425, 0.0499999999999999, 0.525, 0.675, 0.6, 0.575, 0.5, 0.35]), (1800, [0.1, 0.1, 0.0499999999999999, 0, 0, 0.0249999999999999, -0.05, -0.05, -0.05, -0.25, -0.625, -0.65, -0.75, -0.75, -0.75, -0.7, -0.375, 0.0249999999999999, 0.5, 0.65, 0.55, 0.575, 0.425, 0.325]), (1300, [0.15, 0.15, 0.1, -0.05, 0.0499999999999999, 0.0249999999999999, -0.05, -0.05, -0.05, -0.4, -0.8, -0.9, -1, -1, -1, -0.925, -0.575, 0.05, 0.675, 0.875, 0.775, 0.775, 0.675, 0.45]), (1600, [0.124999999999999, 0.124999999999999, 0.05, 0, -0.05, 0.025, -0.075, -0.05, -0.05, -0.3, -0.675, -0.75, -0.8, -0.85, -0.825, -0.8, -0.425, 0.025, 0.575, 0.725, 0.625, 0.625, 0.525, 0.375]), (1800, [0.1, 0.1, 0.025, -0.025, 0, 0.025, 0, -0.0499999999999999, -0.0499999999999999, -0.274999999999999, -0.575, -0.675, -0.725, -0.75, -0.774999999999999, -0.7, -0.375, 0.025, 0.5, 0.625, 0.575, 0.575, 0.475, 0.325]), (1300, [0.15, 0.15, 0.0249999999999999, 0.0249999999999999, -0.05, 0.05, -0.05, -0.075, 0, -0.375, -0.8, -0.925, -0.975, -1, -1, -0.925, -0.575, 0.075, 0.675, 0.875, 0.774999999999999, 0.774999999999999, 0.675, 0.45])]
+    # kWh = []
+    # for kW, Loadshape in lista:
+    #     d.compile_DSS()
+    #     results_path = d.OpenDSS_folder_path + "/results_Main"
+    #     d.dss.text("set DataPath=" + results_path)
+    #
+    #     d.dss.text("Redirect PVSystems_" + str(porcentagem_prosumidores) + ".dss")
+    #
+    #     d.dss.text("Loadshape.Loadshape1.mult=" + str(Loadshape))
+    #     d.dss.text("Storage.storage.Bus1=" + '60')
+    #     d.dss.text("Storage.storage.kWrated=" + str(kW))
+    #     d.dss.text("Storage.storage.kva=" + str(kW))
+    #     d.dss.text("Storage.storage.kw=" + str(kW))
+    #     d.dss.text("Storage.storage.kWhrated=50000")
+    #     d.dss.text("Storage.storage.kWhstored=30000")
+    #
+    #     d.dss.text("Storage.storage.enabled=yes")
+    #
+    #     d.dss.text("Solve")
+    #
+    #     d.dss.text("export monitor Storage")
+    #
+    #     dataStorageMmonitorCSV = {}
+    #
+    #     fname = "D:\\UFBA/IC-storage\\AG_IEEE123Bus\\123Bus\\results_Main\\ieee123_Mon_storage_1.csv"
+    #
+    #     with open(str(fname), 'r', newline='') as file:
+    #         csv_reader_object = csv.reader(file)
+    #         name_col = next(csv_reader_object)
+    #
+    #         for row in name_col:
+    #             dataStorageMmonitorCSV[row] = []
+    #
+    #         for row in csv_reader_object:  ##Varendo todas as linhas
+    #             for ndata in range(0, len(name_col)-1):  ## Varendo todas as colunas
+    #                 rowdata = row[ndata].replace(" ", "").replace('"', "")
+    #                 dataStorageMmonitorCSV[name_col[ndata]].append(float(rowdata))
+    #
+    #     maxkWh = max(dataStorageMmonitorCSV[' kWh'])
+    #     minkWh = min(dataStorageMmonitorCSV[' kWh'])
+    #     kWhRated = (maxkWh-minkWh)/0.7
+    #     kWh.append(kWhRated)
+    # print(kWh)
+
