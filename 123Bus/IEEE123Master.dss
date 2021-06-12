@@ -202,14 +202,14 @@ New Capacitor.C92c      Bus1=92.3    Phases=1     kVAR=50      kV=2.402
 
 //////////// curvas Storage + PVSystem ///////////////////////////////////////////////////////////////
 New XYCurve.eff npts=4 Xarray=[0.1, 0.2, 0.4, 1.0] Yarray=[0.86, 0.9, 0.93, 0.97]
-New LoadShape.loadshape1 interval=1 npts=24 mult = [0.25, 0.25, 0.175, 0.125, 0.125, 0.15, 0.05, 0, 0, -0.325, -0.75, -0.85, -0.925, -0.95, -0.95, -0.875, -0.525, 0, 0.575, 0.75, 0.675, 0.675, 0.6, 0.45]
+New LoadShape.loadshape1 interval=1 npts=24 mult = [0.3, 0.3, 0.275, 0.224999999999999, 0.25, 0.25, 0.15, 0.025, 0, -0.375, -0.775, -0.9, -0.95, -1, -1, -0.925, -0.625, -0.125, 0.425, 0.6, 0.55, 0.55, 0.5, 0.425]
 
 New XYCurve.MyPvsT npts=4  xarray=[0  25  75  100]  yarray=[1.2 1.0 0.8  0.6]
 New Loadshape.MyIrrad npts=24 interval=1 mult=[0 0 0 0 0 0 .1 .2 .3  .5  .8  .9  1.0  1.0  .99  .9  .7  .4  .1 0  0  0  0  0]
 New Tshape.MyTemp npts=24 interval=1 temp=[25, 25, 25, 25, 25, 25, 25, 25, 35, 40, 45, 50  60 60  55 40  35  30  25 25 25 25 25 25]
 
 ///////////////////////// Storages //////////////////////////////////////////////////////////////////////
-New Storage.storage phases=3 model=1 Conn=Wye Bus1=60 kW=1900 kV=4.16 kWhrated=17500 kWhstored=10500 kVA=1900 kWrated=1900
+New Storage.storage phases=3 model=1 Conn=Wye Bus1=60 kW=3300 kV=4.16 kWhrated=50000 kWhstored=30000 kVA=3300 kWrated=3300
 ~ %reserve=20 DispMode=Follow daily=loadshape1 %IdlingkW=1 %Charge=100 %Discharge=100 %EffCharge=90 %EffDischarge=90
 ~ state=Idling vMinpu=0.9 vMaxpu=1.1 %R=0 %X=50 EffCurve=eff
 
@@ -217,6 +217,7 @@ New Storage.storage phases=3 model=1 Conn=Wye Bus1=60 kW=1900 kV=4.16 kWhrated=1
 !New PVSystem.PV phases=3 bus1=60 kV=4.16  kVA=2000 irrad=.98  Pmpp=2000 temperature=25 PF=1 %cutin=0.1 %cutout=0.1
 !~ effcurve=eff  P-TCurve=MyPvsT Daily=MyIrrad  TDaily=MyTemp
 !Redirect PVSystems.dss
+!Redirect PVSystems_0.2.dss
 
 !REGULATORS - REDIRECT TO DEFINITIONS FILE
 ! This file contains definitions for the remainder of regulators on the feeder:

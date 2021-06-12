@@ -46,7 +46,9 @@ New EnergyMeter.Feeder Line.L115 terminal=1
 New Monitor.Potencia_Feeder Line.L115 mode=1 terminal=1 ppolar=no
 New Monitor.Storage Storage.Storage mode=3
 
-set mode = daily stepsize=15m number=96
+!New Monitor.tensaoCarga Load.S2b mode=0
+
+set mode = daily stepsize=15m number=97
 !set mode = daily stepsize=15m number=60 !Simulacao na Máxima demanda
 !SOLVE
 
@@ -60,8 +62,9 @@ plot profile phases=all
 Show Voltage LN Nodes     ! this shows the voltages by node, Line-to-Neutral voltage.
 Show Currents Elements    ! this produces a report of the currents, element-by-element.
 Show Powers kva Elements  ! This produces a report of the powers, in kVA, element-by-element
-Show taps                 ! shows the present regulator taps
 */
+!Show taps                 ! shows the present regulator taps
+
 !Redirect CircuitplottingScripts.DSS
 /*
 ! =================================================================

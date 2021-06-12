@@ -15,4 +15,4 @@ New PVSystem.PV13 phases=1 Bus1=94.1 kV=2.4 kVA=106.79 Pmpp=106.79 conn=wye PF =
 New PVSystem.PV14 phases=1 Bus1=75.3 kV=2.4 kVA=106.79 Pmpp=106.79 conn=wye PF = 1 %cutin = 0.00005 %cutout = 0.00005 effcurve = Myeff P-TCurve = MyPvsT Daily = MyIrrad TDaily = Mytemp 
 New PVSystem.PV15 phases=1 Bus1=113.1 kV=2.4 kVA=106.79 Pmpp=106.79 conn=wye PF = 1 %cutin = 0.00005 %cutout = 0.00005 effcurve = Myeff P-TCurve = MyPvsT Daily = MyIrrad TDaily = Mytemp 
 New PVSystem.PV16 phases=1 Bus1=65.2.3 kV=4.16 kVA=93.44 Pmpp=93.44 conn=wye PF = 1 %cutin = 0.00005 %cutout = 0.00005 effcurve = Myeff P-TCurve = MyPvsT Daily = MyIrrad TDaily = Mytemp 
-New PVSystem.PV17 phases=1 Bus1=76.1.2 kV=4.16 kVA=280.33 Pmpp=280.33 conn=wye PF = 1 %cutin = 0.00005 %cutout = 0.00005 effcurve = Myeff P-TCurve = MyPvsT Daily = MyIrrad TDaily = Mytemp 
+New PVSystem.PV17 phases=1 Bus1=76.1.2 kV=4.16 kVA=280.33 Pmpp=280.33 conn=wye PF = 1 %cutin = 0.00005 %cutout = 0.00005 effcurve = Myeff P-TCurve = MyPvsT Daily = MyIrrad TDaily = Mytemp
