@@ -22,7 +22,7 @@ class DSS(object):  # Classe DSS
         # OpenDSS folder
         self.OpenDSS_folder_path = os.path.dirname(self.dssFileName)
 
-    def solve(self, solucao, kWRatedList, barras, porcentagem_prosumidores):
+    def solve(self, solucao, kWRatedList, barras, porcentagem_prosumidores, kwhrated=50000, kwhstored=30000):
         # self.compile_DSS()
         self.results_path = self.OpenDSS_folder_path + "/results_Main"
         self.dss.text("set DataPath=" + self.results_path)
@@ -47,11 +47,9 @@ class DSS(object):  # Classe DSS
         self.dss.text("Storage.storage.kWrated=" + str(kWRatedList[solucao[0]]))
         self.dss.text("Storage.storage.kva=" + str(kWRatedList[solucao[0]]))
         self.dss.text("Storage.storage.kw=" + str(kWRatedList[solucao[0]]))
-        # self.dss.text("Storage.storage.kWhrated=" + str(kwHRatedList[solucao[1]]))
-        # self.dss.text("Storage.storage.kWhstored=" + str(kWhstored))
 
-        self.dss.text("Storage.storage.kWhrated=50000")
-        self.dss.text("Storage.storage.kWhstored=30000")
+        self.dss.text("Storage.storage.kWhrated=" + str(kwhrated))
+        self.dss.text("Storage.storage.kWhstored=" + str(kwhstored))
 
         self.dss.text("Storage.storage.enabled=yes")
 
@@ -68,6 +66,21 @@ class DSS(object):  # Classe DSS
     def funcaoCusto(self, solucao, kWRatedList, barras, porcentagem_prosumidores):
         self.compile_DSS()
         self.solve(solucao, kWRatedList, barras, porcentagem_prosumidores)
+
+        LoadshapePointsList = [round(ctd, 2) for ctd in list(numpy.arange(-1.0, 1.05, 0.05))]
+        Loadshape = [LoadshapePointsList[ctd] for ctd in solucao[2:]]
+        Loadshape = self.LoadshapeToMediaMovel(Loadshape)
+
+        # Punicao para maximar a amplitude da loadshape
+        maximo = max([abs(min(Loadshape)), max(Loadshape)])
+        if maximo >= 0.95:
+            PunicaoMaxLoadshape = 0
+        elif maximo >= 0.875 and maximo < 0.95:
+            PunicaoMaxLoadshape = 5
+        elif maximo >= 0.8 and maximo < 0.875:
+            PunicaoMaxLoadshape = 10
+        elif maximo < 0.8:
+            PunicaoMaxLoadshape = 30
 
         # Inclinaçoes
         Inclinacao = 0
@@ -144,7 +157,7 @@ class DSS(object):  # Classe DSS
         Perdas_sem_Pv_Stor = 2.316
 
         # Custo = a/(Perdas_sem_Pv_Stor/100-self.dataperda['Perdas %']/100) + Desvio + Inclinacao + PunicaoTensao + PunicaoCicloCarga
-        Custo = self.dataperda['Perdas %'] + Desvio + Inclinacao + PunicaoTensao + PunicaoCicloCarga
+        Custo = self.dataperda['Perdas %'] + Desvio + Inclinacao + PunicaoTensao + PunicaoCicloCarga + PunicaoMaxLoadshape
         return Custo
 
     def mutacao(self, dominio, passo, solucao):
@@ -176,20 +189,24 @@ class DSS(object):  # Classe DSS
         # Cria a primeira geração
         for i in range(tamanho_populacao):
             # Solucao para todos os valores Random
-            solucao = []
-            for ctd in range(len(dominio)):
-                if ctd <= 2:
-                    solucao.append(random.randint(dominio[ctd][0], dominio[ctd][1]))
-                else:
-                    a = [dominio[ctd][0], solucao[-1] - 14]
-                    a = max(a)
-                    b = [dominio[ctd][1], solucao[-1] + 14]
-                    b = min(b)
-                    solucao.append(random.randint(a, b))
-            # solucao = [random.randint(dominio[i][0], dominio[i][1]) for i in range(len(dominio))]
-            # print(solucao)
-            populacao.append(solucao)
+            MaxLoadshapeFlag = 0 # Flag que marca se na loadshape tem algum ponto 1 ou -1
+            while MaxLoadshapeFlag != 1:
+                solucao = []
+                for ctd in range(len(dominio)):
+                    if ctd <= 2:
+                        solucao.append(random.randint(dominio[ctd][0], dominio[ctd][1]))
+                    else:
+                        a = [dominio[ctd][0], solucao[-1] - 14]
+                        a = max(a)
+                        b = [dominio[ctd][1], solucao[-1] + 14]
+                        b = min(b)
+                        solucao.append(random.randint(a, b))
+                # print(solucao)
+                if min(solucao[2:]) <= 2 or max(solucao[2:]) >= 38:
+                    MaxLoadshapeFlag = 1
 
+            populacao.append(solucao)
+        # print(populacao)
         numero_elitismo = int(elitismo * tamanho_populacao)
         geracao = 1
         stop = False
@@ -206,7 +223,7 @@ class DSS(object):  # Classe DSS
             # custos_traduzidos = [(ctd[0], kWRatedList[ctd[1][0]], kwHRatedList[ctd[1][1]]) for ctd in custos]
             custos_traduzidos = [(ctd[0], kWRatedList[ctd[1][0]], barras[ctd[1][1]]) for ctd in custos]
             print("Geração::", geracao,  custos_traduzidos)
-            self.CalculaCustos(custos[0][1], kWRatedList, barras, porcentagem_prosumidores)
+            # self.CalculaCustos(custos[0][1], kWRatedList, barras, porcentagem_prosumidores)
             print("Melhores Resultados", melhor_solucao)
             geracao += 1
             individuos_ordenados = [individuo for (custo, individuo) in custos]
@@ -248,12 +265,12 @@ class DSS(object):  # Classe DSS
             end = time.time()
             print("Tempo da geração:", end - start)
 
-        Loadshape, Perda, Carregamento, Inclinacao, Tensao, Desvio, kWhRated, Demanda = self.CalculaCustos(custos[0][1], kWRatedList, barras, porcentagem_prosumidores)
+        Loadshape, Perda, Carregamento, Inclinacao, Tensao, Desvio, kWhRated, Demanda, kWhstored = self.CalculaCustos(custos[0][1], kWRatedList, barras, porcentagem_prosumidores)
 
         end2 = time.time()
 
         results_file = open("Resultados.txt", "a")
-        results_file.write(f"{geracao}, {(end2 - start2)/3600}, {custos_traduzidos[0][0]}, {custos_traduzidos[0][1]}, {custos_traduzidos[0][2]}, 50000, {Loadshape}, {Perda}, {Carregamento}, {Inclinacao}, {Tensao}, {Desvio}, {kWhRated} \n{Demanda} \n{melhor_solucao} \n")
+        results_file.write(f"{geracao}, {(end2 - start2)/3600}, {custos_traduzidos[0][0]}, {custos_traduzidos[0][1]}, {custos_traduzidos[0][2]}, 50000, {Loadshape}, {Perda}, {Carregamento}, {Inclinacao}, {Tensao}, {Desvio}, {kWhRated}, {kWhstored} \n{Demanda} \n{melhor_solucao} \n")
         results_file.close()
 
         print("tempo total:", end2 - start2)
@@ -266,16 +283,16 @@ class DSS(object):  # Classe DSS
                 dataCargasDSS.append(linha.split(" ")[1])
         return dataCargasDSS
 
-    def LoadshapeToMediaMovel(self, solucao):
+    def LoadshapeToMediaMovel(self, loadshape):
         medias_moveis = []
         num_media = 2
         i = 0
-        while i < (len(solucao) - num_media + 1):
-            grupo = solucao[i: i + num_media]
-            media_grupo = sum(grupo) / num_media
+        while i < (len(loadshape) - num_media + 1):
+            grupo = loadshape[i: i + num_media]
+            media_grupo = round(sum(grupo) / num_media, 3)
             medias_moveis.append(media_grupo)
             i += 1
-        medias_moveis.insert(0, medias_moveis[0])
+        # medias_moveis.insert(0, medias_moveis[0])
         return medias_moveis
 
     def InclinacoesLoadshape(self, solucao):
@@ -284,8 +301,8 @@ class DSS(object):  # Classe DSS
         Inclinacoes = []
 
         for i in range((len(Loadshape))):
-            if i == 23:
-                x = Loadshape[0] - Loadshape[23]
+            if i == 24:
+                x = Loadshape[0] - Loadshape[24]
             else:
                 x = Loadshape[i+1] - Loadshape[i]
             Inclinacoes.append(numpy.arctan(x)*180/pi)
@@ -388,8 +405,46 @@ class DSS(object):  # Classe DSS
         self.compile_DSS()
         self.solve(solucao, kWRatedList, barras, porcentagem_prosumidores)
 
+        ### Acessando CSV Storage
+        dataStorageMmonitorCSV = {}
+
+        fname = "C:\\Users\jonas\\PycharmProjects\\AG_IEEE123Bus\\123Bus\\results_Main\\ieee123_Mon_storage_1.csv"
+
+        with open(str(fname), 'r', newline='') as file:
+            csv_reader_object = csv.reader(file)
+            name_col = next(csv_reader_object)
+
+            for row in name_col:
+                dataStorageMmonitorCSV[row] = []
+
+            for row in csv_reader_object:  ##Varendo todas as linhas
+                for ndata in range(0, len(name_col)-1):  ## Varendo todas as colunas
+                    if row != ['ÿÿÿÿ']:
+                        rowdata = row[ndata].replace(" ", "").replace('"', "")
+                        dataStorageMmonitorCSV[name_col[ndata]].append(float(rowdata))
+
+        maxkWh = max(dataStorageMmonitorCSV[' kWh'])
+        minkWh = min(dataStorageMmonitorCSV[' kWh'])
+        kWhRated = (maxkWh-minkWh)/0.7
+        kwhstored = 30000-minkWh+0.25*kWhRated
+
+        self.compile_DSS()
+        self.solve(solucao, kWRatedList, barras, porcentagem_prosumidores, kWhRated, kwhstored)
+
         LoadshapePointsList = [round(ctd, 2) for ctd in list(numpy.arange(-1.0, 1.05, 0.05))]
         Loadshape = [LoadshapePointsList[ctd] for ctd in solucao[2:]]
+        Loadshape = self.LoadshapeToMediaMovel(Loadshape)
+
+        # Punicao para maximar a amplitude da loadshape
+        maximo = max([abs(min(Loadshape)), max(Loadshape)])
+        if maximo >= 0.95:
+            PunicaoMaxLoadshape = 0
+        elif maximo >= 0.875 and maximo < 0.95:
+            PunicaoMaxLoadshape = 5
+        elif maximo >= 0.8 and maximo < 0.875:
+            PunicaoMaxLoadshape = 10
+        elif maximo < 0.8:
+            PunicaoMaxLoadshape = 30
 
         # CICLO DE CARGA DA BATERIA
         # É preciso garantir que ao final das 48h o nível de carregamento da bateria seja o mesmo do inicio da simulacao
@@ -453,33 +508,11 @@ class DSS(object):  # Classe DSS
 
             Desvio = statistics.pstdev(dataFeederMmonitorCSV['PTotal'])
 
-        ### Acessando CSV Storage
-        dataStorageMmonitorCSV = {}
-
-        fname = "C:\\Users\jonas\\PycharmProjects\\AG_IEEE123Bus\\123Bus\\results_Main\\ieee123_Mon_storage_1.csv"
-
-        with open(str(fname), 'r', newline='') as file:
-            csv_reader_object = csv.reader(file)
-            name_col = next(csv_reader_object)
-
-            for row in name_col:
-                dataStorageMmonitorCSV[row] = []
-
-            for row in csv_reader_object:  ##Varendo todas as linhas
-                for ndata in range(0, len(name_col)-1):  ## Varendo todas as colunas
-                    if row != ['ÿÿÿÿ']:
-                        rowdata = row[ndata].replace(" ", "").replace('"', "")
-                        dataStorageMmonitorCSV[name_col[ndata]].append(float(rowdata))
-
-        maxkWh = max(dataStorageMmonitorCSV[' kWh'])
-        minkWh = min(dataStorageMmonitorCSV[' kWh'])
-        kWhRated = (maxkWh-minkWh)/0.7
-
         # print('Perdas:', self.dataperda['Perdas %'], 'kWh 48h:', Carregamento48h, 'Inclinação:', Inclinacao, 'Barras_Violada:', self.BarrasTensaoVioladas(), 'Desvio:', Desvio, 'PTotal:', dataFeederMmonitorCSV['PTotal'])
-        print(self.LoadshapeToMediaMovel(Loadshape),",", self.dataperda['Perdas %'],",", Carregamento48h,",", Inclinacao,",", self.BarrasTensaoVioladas(),",", Desvio, ",", kWhRated)
-        print(dataFeederMmonitorCSV['PTotal'])
+        # print(self.LoadshapeToMediaMovel(Loadshape),",", self.dataperda['Perdas %'],",", Carregamento48h,",", Inclinacao,",", self.BarrasTensaoVioladas(),",", Desvio, ",", kWhRated)
+        # print(dataFeederMmonitorCSV['PTotal'])
         # print('Loadshape:', self.LoadshapeToMediaMovel(Loadshape))
-        return str(self.LoadshapeToMediaMovel(Loadshape)).replace("[", "").replace("]", ""), self.dataperda['Perdas %'], Carregamento48h, Inclinacao, self.BarrasTensaoVioladas(), Desvio, kWhRated, dataFeederMmonitorCSV['PTotal']
+        return str(Loadshape).replace("[", "").replace("]", ""), self.dataperda['Perdas %'], Carregamento48h, Inclinacao, self.BarrasTensaoVioladas(), Desvio, kWhRated, dataFeederMmonitorCSV['PTotal'], kwhstored
 
     def CalculaCustosOriginal(self, porcentagem_prosumidores):
         self.compile_DSS()
@@ -556,7 +589,7 @@ class DSS(object):  # Classe DSS
         print('Perdas:', self.dataperda['Perdas %'], 'Violações de Tensao:', barrasVioladas, 'PTotal:', dataFeederMmonitorCSV['PTotal'], '\n')
         return barrasVioladas
 
-    def PunicaoCiclodeCarga(self, solucao, kwHRatedList):
+    def PunicaoCiclodeCarga(self, solucao, kwHRatedList, kwhstored=30000):
         # kWhstored = 0.6 * kwHRatedList[solucao[1]]
 
         dataMonitorStorage = {}
@@ -575,8 +608,8 @@ class DSS(object):  # Classe DSS
                         dataMonitorStorage[name_col[ndata]].append(float(rowdata))
 
         Carregamento48h = dataMonitorStorage[' kWh'][-1]
-        # PunicaoCicloCarga = pow(abs((kWhstored-Carregamento48h)/100),1)
-        PunicaoCicloCarga = pow(abs((30000-Carregamento48h)/100),1)
+        PunicaoCicloCarga = pow(abs((kwhstored-Carregamento48h)/100),1)
+        # PunicaoCicloCarga = pow(abs((30000-Carregamento48h)/100),1)
 
         return Carregamento48h, PunicaoCicloCarga
 
@@ -598,10 +631,11 @@ if __name__ == '__main__':
             barras.append(d.dss.bus_name())
     print(barras)
 
-    kWRatedList = list(range(100, 4100, 100))
+    kWRatedList = list(range(100, 5050, 50))
     kwHRatedList = list(range(1000, 35000, 500))
     # dominio = [(0, len(kWRatedList) - 1), (0, 40) , (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
-    dominio = [(0, len(kWRatedList) - 1), (0, len(barras) - 1), (0, 40) , (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
+    # dominio = [(0, len(kWRatedList) - 1), (0, len(barras) - 1), (0, 40) , (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
+    dominio = [(0, len(kWRatedList) - 1), (0, len(barras) - 1), (0, 40) , (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40), (0, 40)]
     # dominio = [(0, len(kWRatedList) - 1), (0, len(kwHRatedList) - 1), (0, 40), (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
     # dominio = [(0, 40) , (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40),  (0, 40)]
 

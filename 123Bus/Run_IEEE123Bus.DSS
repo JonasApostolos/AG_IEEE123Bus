@@ -14,7 +14,7 @@
 ! 1st Script
 ! =================================================================
 
-
+Clear
 Compile (IEEE123Master.dss)
 
 ! 'Compile' differs from "redirect" in that it changes the default directory 
@@ -42,8 +42,8 @@ Set MaxControlIter=30
 
 ! Solve executes the solution for the present solution mode, which is "snapshot".
 
-New EnergyMeter.Feeder Line.L115 terminal=1
-New Monitor.Potencia_Feeder Line.L115 mode=1 terminal=1 ppolar=no
+New EnergyMeter.Feeder Line.SW1 terminal=1
+New Monitor.Potencia_Feeder Line.SW1 mode=1 terminal=1 ppolar=no
 New Monitor.Storage Storage.Storage mode=3
 
 !New Monitor.tensaoCarga Load.S2b mode=0
@@ -66,57 +66,4 @@ Show Powers kva Elements  ! This produces a report of the powers, in kVA, elemen
 !Show taps                 ! shows the present regulator taps
 
 !Redirect CircuitplottingScripts.DSS
-/*
-! =================================================================
-! 2nd Script
-! =================================================================
 
-! This script give results closer to the posted results by forcing 
-! the regulators to the same tap as the solution posted
-
-Compile (IEEE123Master.dss)
-
-! set regulators on same tap as Kersting computes
-! (uses RPN inline math feature of OpenDSS)
-! Transformer taps are expressed in per unit
-
-Transformer.reg1a.wdg=2 Tap=(0.00625  7  * 1 +)   ! Tap 7
-Transformer.reg2a.wdg=2 Tap=(0.00625 -1 * 1 +)    ! Tap -1
-Transformer.reg3a.wdg=2 Tap=(0.00625  0  * 1 +)   ! Tap 0
-Transformer.reg3c.wdg=2 Tap=(0.00625 -1 * 1 +)    ! Tap -1
-Transformer.reg4a.wdg=2 Tap=(0.00625  8 * 1 +)    ! Tap 8
-Transformer.reg4b.wdg=2 Tap=(0.00625  1 * 1 +)    ! Tap 1
-Transformer.reg4c.wdg=2 Tap=(0.00625  5 * 1 +)    ! Tap 5
-
-! Lock the regulators so they don't move
-! Another way of doing this is to Set ControlMode=OFF
-
-RegControl.creg1a.maxtapchange=0  !Fixed at present tap
-RegControl.creg2a.maxtapchange=0  !Fixed at present tap
-RegControl.creg3a.maxtapchange=0  !Fixed at present tap
-RegControl.creg4a.maxtapchange=0  !Fixed at present tap
-RegControl.creg3c.maxtapchange=0  !Fixed at present tap
-RegControl.creg4b.maxtapchange=0  !Fixed at present tap
-RegControl.creg4c.maxtapchange=0  !Fixed at present tap
-
-! No need to revise the MaxControlIter option in this case;
-! there will be only one control iteration
-
-New EnergyMeter.Feeder Line.L115 1
-
-!solve
-Buscoords Buscoords.dat   ! load in bus coordinates
-
-! Show some selected results
-
-Plot Profile
-
-Show Voltage LN Nodes
-Show Currents Elements
-Show Powers kva Elements
-Show taps  
-
-
-help
-plot Loadshape Object=default
-*/
